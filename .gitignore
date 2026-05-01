@@ -1,0 +1,44 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/deploymentTargetDropDown.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/doc
+
+# 各モジュール（appなど）のビルド生成物
+/*/build
+
+# Kotlin 関連
+*.kotlin_module
+
+# デバイス・エミュレータ関連
+*.jks
+*.keystore
+*.apk
+*.apks
+*.aab
+
+# Google Services (もし将来使う場合)
+# google-services.json
+
+.doc
+
+*.jks
+*.jks
+*.keystore
+
+text:/.gitignore
+*.dm
+*.apk
+GEMINI.md
