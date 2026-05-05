@@ -1,4 +1,4 @@
-package com.musicplayer.adapter
+package com.kusa.musicplayer.adapter
 
 import android.view.LayoutInflater
 import android.view.View
@@ -9,9 +9,9 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.musicplayer.AlbumArtLoader
-import com.musicplayer.R
-import com.musicplayer.model.Song
+import com.kusa.musicplayer.AlbumArtLoader
+import com.kusa.musicplayer.R
+import com.kusa.musicplayer.model.Song
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 

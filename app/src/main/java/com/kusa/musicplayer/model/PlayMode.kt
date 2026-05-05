@@ -1,4 +1,4 @@
-package com.musicplayer.model
+package com.kusa.musicplayer.model
 
 enum class PlayMode {
     SEQUENTIAL,   // 順番再生ループ

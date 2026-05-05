@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace 'com.musicplayer'
+    namespace 'com.kusa.musicplayer'
     compileSdk 35
     buildToolsVersion "35.0.0"
 
     defaultConfig {
-        applicationId "com.musicplayer"
+        applicationId "com.kusa.musicplayer"
         minSdk 26
         targetSdk 35
         versionCode 1

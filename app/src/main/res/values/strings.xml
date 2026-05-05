@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Music Player</string>
     <string name="no_song">曲が選択されていません</string>
-    <string name="select_folder">フォルダを選択</string>
+    <string name="select_folder">フォルダ選択</string>
     <string name="shuffle_on">シャッフル：オン</string>
     <string name="shuffle_off">シャッフル：オフ</string>
     <string name="play">再生</string>

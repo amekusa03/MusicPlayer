@@ -1,4 +1,4 @@
-package com.musicplayer.service
+package com.kusa.musicplayer.service
 
 import android.app.PendingIntent
 import android.content.Context
@@ -18,9 +18,9 @@ import androidx.media3.session.MediaSession
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import com.musicplayer.MainActivity
-import com.musicplayer.model.MusicRepository
-import com.musicplayer.model.Song
+import com.kusa.musicplayer.MainActivity
+import com.kusa.musicplayer.model.MusicRepository
+import com.kusa.musicplayer.model.Song
 
 class MusicPlaybackService : MediaLibraryService() {
 

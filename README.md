@@ -1,4 +1,4 @@
-# クサプレイヤー (MusicPlayer for Android)
+# claudio's music player for Android (MusicPlayer for Android)
 
 Android 向けのシンプルなローカル音楽プレイヤーアプリです。
 
@@ -10,8 +10,8 @@ Android 向けのシンプルなローカル音楽プレイヤーアプリです
 - 検索（曲名・アーティスト名・アルバム名）
 - バックグラウンド再生（フォアグラウンドサービス）
 - Android Auto 対応
-- Googleアシスタント音声操作対応（「〇〇をかけて」）
-- スキャン結果のキャッシュ（24時間TTL）
+- Googleアシスタント音声操作対応（「〇〇をかけて」）** 動作せず **
+- スキャン結果のキャッシュ（永続・フォルダ変更時に更新）
 
 ## 技術スタック
 

@@ -1,4 +1,4 @@
-package com.musicplayer.car
+package com.kusa.musicplayer.car
 
 import androidx.car.app.CarContext
 import androidx.car.app.Screen

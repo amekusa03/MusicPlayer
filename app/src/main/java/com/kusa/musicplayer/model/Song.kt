@@ -1,4 +1,4 @@
-package com.musicplayer.model
+package com.kusa.musicplayer.model
 
 import android.net.Uri
 

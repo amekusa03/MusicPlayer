@@ -1,4 +1,4 @@
-package com.musicplayer.model
+package com.kusa.musicplayer.model
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
@@ -19,13 +19,11 @@ class MusicRepository(private val context: Context) {
 
     // ---- キャッシュ読み書き ----
 
-    /** キャッシュから楽曲一覧を同期的に取得する（24h TTL、失敗時は null）。 */
+    /** キャッシュから楽曲一覧を同期的に取得する（失敗時またはデータなしは null）。 */
     fun loadSongsFromCacheSync(folderUri: Uri): List<Song>? {
         val raw = cachePrefs.getString(cacheKey(folderUri), null) ?: return null
         return try {
             val root = JSONObject(raw)
-            val age = System.currentTimeMillis() - root.getLong("ts")
-            if (age > 24 * 60 * 60 * 1000L) return null  // 24h TTL
             val arr = root.getJSONArray("songs")
             List(arr.length()) { i ->
                 val o = arr.getJSONObject(i)
@@ -67,11 +65,16 @@ class MusicRepository(private val context: Context) {
         cachePrefs.edit().putString(cacheKey(folderUri), payload.toString()).apply()
     }
 
+    /** すべてのキャッシュデータを削除する */
+    fun clearCache() {
+        cachePrefs.edit().clear().apply()
+    }
+
     // ---- 楽曲読み込み ----
 
     /**
      * フォルダ URI から楽曲一覧を取得する。
-     * forceRefresh = false のときはキャッシュを優先する。
+     * forceRefresh = true のときは既存の全キャッシュをクリアしてから再スキャンする。
      */
     suspend fun loadSongsFromFolder(
         folderUri: Uri,
@@ -80,6 +83,9 @@ class MusicRepository(private val context: Context) {
     ): List<Song> = withContext(Dispatchers.IO) {
         if (!forceRefresh) {
             loadSongsFromCacheSync(folderUri)?.let { return@withContext it }
+        } else {
+            // フォルダ設定し直し（強制リフレッシュ）時は旧キャッシュを消去
+            clearCache()
         }
         val songs = mutableListOf<Song>()
         val folder = DocumentFile.fromTreeUri(context, folderUri) ?: return@withContext songs

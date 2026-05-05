@@ -1,0 +1,31 @@
+package com.kusa.musicplayer.ui
+
+import android.os.Bundle
+import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.ListView
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProvider
+import com.kusa.musicplayer.R
+import com.kusa.musicplayer.viewmodel.PlayerViewModel
+
+class AlbumListFragment : Fragment(R.layout.fragment_list_simple) {
+    private val vm: PlayerViewModel by lazy {
+        ViewModelProvider(requireActivity())[PlayerViewModel::class.java]
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val listView = view.findViewById<ListView>(R.id.listView)
+
+        vm.albums.observe(viewLifecycleOwner) { albums ->
+            val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, albums)
+            listView.adapter = adapter
+        }
+
+        listView.setOnItemClickListener { parent, _, position, _ ->
+            val name = parent.getItemAtPosition(position) as String
+            vm.playAlbum(name)
+        }
+    }
+}

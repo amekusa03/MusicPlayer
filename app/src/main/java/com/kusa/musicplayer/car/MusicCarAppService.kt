@@ -1,6 +1,5 @@
-package com.musicplayer.car
+package com.kusa.musicplayer.car
 
-import android.content.Intent
 import androidx.car.app.CarAppService
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator

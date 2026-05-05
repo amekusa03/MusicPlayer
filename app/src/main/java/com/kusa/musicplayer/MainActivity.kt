@@ -1,30 +1,44 @@
-package com.musicplayer
+package com.kusa.musicplayer
 
 import android.app.SearchManager
 import android.content.Intent
 import android.net.Uri
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.view.View
-import android.widget.*
+import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.SeekBar
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import android.graphics.Color
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.viewpager2.widget.ViewPager2
+import com.google.android.material.tabs.TabLayout
+import com.google.android.material.tabs.TabLayoutMediator
+import com.kusa.musicplayer.adapter.MainPagerAdapter
+import com.kusa.musicplayer.model.PlayMode
+import com.kusa.musicplayer.viewmodel.PlayerViewModel
 import kotlinx.coroutines.Job
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.musicplayer.adapter.SongListAdapter
-import com.musicplayer.model.PlayMode
-import com.musicplayer.viewmodel.PlayerViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val PREFS = "music_player_prefs"
+        private const val KEY_FOLDER = "last_folder_uri"
+    }
+
     private lateinit var vm: PlayerViewModel
-    private lateinit var adapter: SongListAdapter
 
     private lateinit var ivArtwork: ImageView
     private lateinit var tvTitle: TextView
@@ -37,14 +51,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var seekBar: SeekBar
     private lateinit var tvCurrentTime: TextView
     private lateinit var tvTotalTime: TextView
-    private lateinit var rvSongs: RecyclerView
+    private lateinit var viewPager: ViewPager2
+    private lateinit var tabLayout: TabLayout
     private lateinit var btnSelectFolder: Button
     private lateinit var pbLoading: ProgressBar
     private lateinit var tvEmpty: TextView
     private lateinit var searchView: androidx.appcompat.widget.SearchView
-
-    private val PREFS = "music_player_prefs"
-    private val KEY_FOLDER = "last_folder_uri"
 
     private var artworkJob: Job? = null
 
@@ -62,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         uri?.let {
             contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_FOLDER, it.toString()).apply()
-            vm.loadFolder(it, forceRefresh = true)  // 新フォルダは必ず再スキャン
+            vm.loadFolder(it, forceRefresh = true)
         } ?: run {
             Toast.makeText(this, "フォルダ選択がキャンセルされました", Toast.LENGTH_SHORT).show()
         }
@@ -76,7 +88,7 @@ class MainActivity : AppCompatActivity() {
         vm.connectToService()
 
         bindViews()
-        setupAdapter()
+        setupPager()
         observeViewModel()
         setupControls()
 
@@ -88,12 +100,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // 画面が表示された際、再生中であれば更新ループを再開
         if (vm.isPlaying.value == true) handler.post(progressRunnable)
     }
 
     override fun onStop() {
-        // 画面が非表示になったら更新ループを停止して負荷を下げる
         handler.removeCallbacks(progressRunnable)
         super.onStop()
     }
@@ -104,16 +114,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIntent(intent: Intent) {
-        android.util.Log.d("MusicPlayer", "Intent received: ${intent.action}")
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             val query = intent.getStringExtra(SearchManager.QUERY) ?: return
             val focusedField = intent.getStringExtra(MediaStore.EXTRA_MEDIA_FOCUS)
-            android.util.Log.d("MusicPlayer", "Voice search query: $query, focus: $focusedField")
-            // 読み込み完了を待つ必要がある場合は、ViewModel側で適切にキューイングするか
-            // songsのLiveDataが更新された後に実行する工夫が必要です
-            lifecycleScope.launch {
-                vm.handleVoiceSearch(query, focusedField)
-            }
+            vm.handleVoiceSearch(query, focusedField)
         }
     }
 
@@ -129,37 +133,42 @@ class MainActivity : AppCompatActivity() {
         seekBar        = findViewById(R.id.seekBar)
         tvCurrentTime  = findViewById(R.id.tvCurrentTime)
         tvTotalTime    = findViewById(R.id.tvTotalTime)
-        rvSongs        = findViewById(R.id.rvSongs)
+        viewPager      = findViewById(R.id.viewPager)
+        tabLayout      = findViewById(R.id.tabLayout)
         btnSelectFolder = findViewById(R.id.btnSelectFolder)
         pbLoading      = findViewById(R.id.pbLoading)
         tvEmpty        = findViewById(R.id.tvEmpty)
         searchView     = findViewById(R.id.searchView)
     }
 
-    private fun setupAdapter() {
-        adapter = SongListAdapter(lifecycleScope) { song -> vm.playSong(song) }
-        rvSongs.layoutManager = LinearLayoutManager(this)
-        rvSongs.adapter = adapter
+    private fun setupPager() {
+        val pagerAdapter = MainPagerAdapter(this)
+        viewPager.adapter = pagerAdapter
+        TabLayoutMediator(tabLayout, viewPager) { tab, position ->
+            tab.text = when (position) {
+                0 -> "全曲"
+                1 -> "アーティスト"
+                2 -> "アルバム"
+                else -> ""
+            }
+        }.attach()
     }
 
     private fun observeViewModel() {
         vm.songs.observe(this) { songs ->
-            adapter.submitList(songs)
             tvEmpty.visibility = if (songs.isEmpty()) View.VISIBLE else View.GONE
         }
 
         vm.currentSong.observe(this) { song ->
-            adapter.setCurrentSong(song)
-            artworkJob?.cancel() // 前の読み込み処理があればキャンセル
+            artworkJob?.cancel()
             if (song != null) {
                 tvTitle.text  = song.displayTitle
                 tvArtist.text = song.displayArtist
                 tvAlbum.text  = song.displayAlbum
-                // Load artwork via coroutine
+                ivArtwork.setImageResource(R.drawable.ic_album_placeholder)
                 artworkJob = lifecycleScope.launch {
                     val bmp = AlbumArtLoader.load(this@MainActivity, song.uri)
                     if (bmp != null) ivArtwork.setImageBitmap(bmp)
-                    else ivArtwork.setImageResource(R.drawable.ic_album_placeholder)
                 }
             } else {
                 tvTitle.text  = getString(R.string.no_song)
@@ -172,16 +181,22 @@ class MainActivity : AppCompatActivity() {
         vm.isPlaying.observe(this) { playing ->
             btnPlayPause.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
             handler.removeCallbacks(progressRunnable)
-            // 画面が表示されている場合のみループを開始
             if (playing && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                 handler.post(progressRunnable)
             }
         }
 
         vm.playMode.observe(this) { mode ->
-            btnShuffle.setImageResource(
-                if (mode == PlayMode.SHUFFLE) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle_off
-            )
+            val isShuffle = mode == PlayMode.SHUFFLE
+            btnShuffle.setImageResource(if (isShuffle) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle_off)
+
+            // プロジェクトのアクセントカラーを使用して視認性を向上させます
+            val tintColor = if (isShuffle) {
+                ContextCompat.getColor(this, R.color.accent) // ON: 明るい緑
+            } else {
+                ContextCompat.getColor(this, R.color.on_surface_secondary) // OFF: グレー
+            }
+            btnShuffle.imageTintList = ColorStateList.valueOf(tintColor)
         }
 
         vm.progress.observe(this) { pos ->
@@ -205,10 +220,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupControls() {
         btnSelectFolder.setOnClickListener { folderPicker.launch(null) }
-        btnPlayPause.setOnClickListener   {
+        btnPlayPause.setOnClickListener {
             if (vm.currentSong.value == null) {
-                // 曲が選択されていない場合は、現在表示されているリストの最初の曲を再生する
-                val currentSongs = adapter.currentList // 表示されているリストを直接参照
+                val currentSongs = vm.songs.value
                 if (!currentSongs.isNullOrEmpty()) {
                     vm.playSong(currentSongs[0])
                 }
@@ -242,6 +256,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun formatTime(ms: Long): String {
+        if (ms < 0) return "0:00"
         val totalSeconds = ms / 1000
         val minutes = totalSeconds / 60
         val seconds = totalSeconds % 60
