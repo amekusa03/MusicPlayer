@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissions -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -9,7 +8,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Android Auto -->
     <uses-feature android:name="android.hardware.type.automotive" android:required="false" />
 
     <application
@@ -20,7 +18,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MusicPlayer">
 
-        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -29,14 +26,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Google Assistant: play by song name -->
             <intent-filter>
                 <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
-        <!-- Music Playback Service (Media3 MediaLibraryService) -->
         <service
             android:name=".service.MusicPlaybackService"
             android:exported="true"
@@ -47,20 +42,13 @@
             </intent-filter>
         </service>
 
-        <!-- Android Auto CarAppService -->
-        <service
-            android:name=".car.MusicCarAppService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.car.app.CarAppService" />
-                <category android:name="androidx.car.app.category.MEDIA" />
-            </intent-filter>
-            <meta-data
-                android:name="distractionOptimized"
-                android:value="true" />
-        </service>
+        <!-- アートワークを車載機に提供するためのプロバイダー -->
+        <provider
+            android:name=".AlbumArtProvider"
+            android:authorities="com.kusa.musicplayer.albumart"
+            android:exported="true"
+            android:grantUriPermissions="true" />
 
-        <!-- Android Auto metadata -->
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

@@ -11,57 +11,40 @@ import kotlinx.coroutines.withContext
 
 object AlbumArtLoader {
     private const val TAG = "AlbumArtLoader"
-    private const val TARGET_ARTWORK_SIZE_PX = 512
+    // Android 8.0 ユニットのタイムアウトを防ぐため、サイズをさらに絞る
+    private const val TARGET_ARTWORK_SIZE_PX = 256
 
     suspend fun load(context: Context, songUri: Uri): Bitmap? = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()
-        var bitmap: Bitmap? = null
         try {
             retriever.setDataSource(context, songUri)
             val embeddedPic = retriever.embeddedPicture
 
             if (embeddedPic != null) {
                 val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
+                    inPreferredConfig = Bitmap.Config.RGB_565
                 }
-                BitmapFactory.decodeByteArray(embeddedPic, 0, embeddedPic.size, options)
-
-                val originalWidth = options.outWidth
-                val originalHeight = options.outHeight
-
-                var inSampleSize = 1
-                if (originalHeight > TARGET_ARTWORK_SIZE_PX || originalWidth > TARGET_ARTWORK_SIZE_PX) {
-                    val halfHeight = originalHeight / 2
-                    val halfWidth = originalWidth / 2
-                    while (halfHeight / inSampleSize >= TARGET_ARTWORK_SIZE_PX &&
-                           halfWidth / inSampleSize >= TARGET_ARTWORK_SIZE_PX) {
-                        inSampleSize *= 2
+                val bitmap = BitmapFactory.decodeByteArray(embeddedPic, 0, embeddedPic.size, options)
+                
+                if (bitmap != null) {
+                    // 複雑なリサイズ処理を省き、単純なスケーリングで速度優先にする
+                    if (bitmap.width > TARGET_ARTWORK_SIZE_PX || bitmap.height > TARGET_ARTWORK_SIZE_PX) {
+                        val scale = TARGET_ARTWORK_SIZE_PX.toFloat() / maxOf(bitmap.width, bitmap.height)
+                        return@withContext Bitmap.createScaledBitmap(
+                            bitmap, 
+                            (bitmap.width * scale).toInt(), 
+                            (bitmap.height * scale).toInt(), 
+                            false
+                        )
                     }
-                }
-
-                val finalOptions = BitmapFactory.Options().apply {
-                    this.inSampleSize = inSampleSize
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                }
-                bitmap = BitmapFactory.decodeByteArray(embeddedPic, 0, embeddedPic.size, finalOptions)
-
-                if (bitmap != null && (bitmap.width > TARGET_ARTWORK_SIZE_PX || bitmap.height > TARGET_ARTWORK_SIZE_PX)) {
-                    val scaleFactor = minOf(
-                        TARGET_ARTWORK_SIZE_PX.toFloat() / bitmap.width,
-                        TARGET_ARTWORK_SIZE_PX.toFloat() / bitmap.height
-                    )
-                    val newWidth = (bitmap.width * scaleFactor).toInt()
-                    val newHeight = (bitmap.height * scaleFactor).toInt()
-                    val scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-                    bitmap.recycle()
-                    bitmap = scaled
+                    return@withContext bitmap
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "アルバムアートの読み込みに失敗しました", e)
+            Log.e(TAG, "アートワーク抽出失敗: ${e.message}")
         } finally {
-            retriever.release()
+            try { retriever.release() } catch (e: Exception) {}
         }
-        return@withContext bitmap
+        return@withContext null
     }
 }

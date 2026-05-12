@@ -19,10 +19,13 @@ import com.kusa.musicplayer.model.PlayMode
 import com.kusa.musicplayer.model.Song
 import com.kusa.musicplayer.service.MusicPlaybackService
 import kotlinx.coroutines.launch
+import java.text.Collator
+import java.util.Locale
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = MusicRepository(application)
+    private val collator = Collator.getInstance(Locale.JAPANESE)
     private var browser: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
@@ -66,6 +69,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 skipNext()
             }
         }
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            _playMode.postValue(if (shuffleModeEnabled) PlayMode.SHUFFLE else PlayMode.SEQUENTIAL)
+        }
     }
 
     fun connectToService() {
@@ -73,8 +79,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val token = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
         controllerFuture = MediaController.Builder(context, token).buildAsync()
         controllerFuture?.addListener({
-            browser = controllerFuture?.get()
-            browser?.addListener(playerListener)
+            val controller = controllerFuture?.get() ?: return@addListener
+            browser = controller
+            controller.addListener(playerListener)
+            // 接続時の状態を反映
+            _playMode.postValue(if (controller.shuffleModeEnabled) PlayMode.SHUFFLE else PlayMode.SEQUENTIAL)
             updateCurrentSong()
         }, MoreExecutors.directExecutor())
     }
@@ -84,9 +93,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             try {
                 val loaded = repo.loadSongsFromFolder(folderUri, forceRefresh) { batch ->
-                    _songs.postValue(batch.sortedBy { it.displayTitle })
+                    _songs.postValue(batch.sortedWith { a, b -> collator.compare(a.displayTitle, b.displayTitle) })
                 }
-                val sorted = loaded.sortedBy { it.displayTitle }
+                val sorted = loaded.sortedWith { a, b -> collator.compare(a.displayTitle, b.displayTitle) }
                 allSongs = sorted
                 currentQuery = ""
                 currentArtistFilter = null
@@ -105,8 +114,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun updateGroupLists(songList: List<Song>) {
-        _artists.postValue(songList.map { it.displayArtist }.distinct().sorted())
-        _albums.postValue(songList.map { it.displayAlbum }.distinct().sorted())
+        _artists.postValue(songList.map { it.displayArtist }.distinct().sortedWith { a, b -> collator.compare(a, b) })
+        _albums.postValue(songList.map { it.displayAlbum }.distinct().sortedWith { a, b -> collator.compare(a, b) })
     }
 
     fun playSong(song: Song, list: List<Song>? = null) {
@@ -155,7 +164,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun togglePlayMode() {
         val next = if (_playMode.value == PlayMode.SEQUENTIAL) PlayMode.SHUFFLE else PlayMode.SEQUENTIAL
-        _playMode.value = next
+        // UI側の状態変更はリスナー（onShuffleModeEnabledChanged）経由で行われるため、ここではブラウザへ指示を出すのみ
         browser?.let {
             when (next) {
                 PlayMode.SEQUENTIAL -> {

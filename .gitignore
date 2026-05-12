@@ -42,3 +42,4 @@ text:/.gitignore
 *.dm
 *.apk
 GEMINI.md
+.kotlin/errors/

@@ -9,8 +9,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.Collator
+import java.util.Locale
 
 class MusicRepository(private val context: Context) {
+
+    private val collator = Collator.getInstance(Locale.JAPANESE)
 
     private val cachePrefs get() =
         context.getSharedPreferences("music_cache", Context.MODE_PRIVATE)
@@ -90,7 +94,7 @@ class MusicRepository(private val context: Context) {
         val songs = mutableListOf<Song>()
         val folder = DocumentFile.fromTreeUri(context, folderUri) ?: return@withContext songs
         scanDirectory(folder, songs, onProgress)
-        songs.sortBy { it.displayTitle }
+        songs.sortWith { a, b -> collator.compare(a.displayTitle, b.displayTitle) }
         saveSongsToCache(folderUri, songs)
         songs
     }

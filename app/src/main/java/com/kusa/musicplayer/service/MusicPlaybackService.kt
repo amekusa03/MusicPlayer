@@ -3,47 +3,89 @@ package com.kusa.musicplayer.service
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.BitmapLoader
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
+import com.kusa.musicplayer.AlbumArtLoader
 import com.kusa.musicplayer.MainActivity
 import com.kusa.musicplayer.model.MusicRepository
 import com.kusa.musicplayer.model.Song
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.text.Collator
+import java.util.Locale
 
 class MusicPlaybackService : MediaLibraryService() {
+
+    companion object {
+        private val COMMAND_TOGGLE_SHUFFLE = SessionCommand("com.kusa.musicplayer.TOGGLE_SHUFFLE", Bundle.EMPTY)
+    }
 
     private lateinit var player: ExoPlayer
     private lateinit var mediaLibrarySession: MediaLibrarySession
     private val repo by lazy { MusicRepository(this) }
     private var songs: List<Song> = emptyList()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var lastParentId: String = "all_songs"
 
-    companion object {
-        private const val PREFS = "music_player_prefs"
-        private const val KEY_FOLDER = "last_folder_uri"
+    private val shuffleStateListener = object : Player.Listener {
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            if (::mediaLibrarySession.isInitialized) {
+                mediaLibrarySession.setCustomLayout(ImmutableList.of(buildShuffleButton()))
+            }
+        }
+    }
 
-        const val ROOT_ID = "root"
-        private const val SONGS_ID = "songs"
-        private const val ARTISTS_ID = "artists"
-        private const val ALBUMS_ID = "albums"
-        private const val ARTIST_PREFIX = "artist/"
-        private const val ALBUM_PREFIX = "album/"
+    private val customBitmapLoader = object : BitmapLoader {
+        override fun supportsMimeType(mimeType: String): Boolean = true
+        override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> =
+            Futures.immediateFuture(BitmapFactory.decodeByteArray(data, 0, data.size))
+        override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> {
+            val future = SettableFuture.create<Bitmap>()
+            serviceScope.launch {
+                // AlbumArtProvider URI の場合はクエリパラメータから元の曲URIを取り出す。
+                // そのまま渡すと MediaMetadataRetriever が JPEG を音声ファイルとして扱い
+                // embeddedPicture が null になるため、Android Auto にアートワークが届かない。
+                val targetUri = if (uri.authority == "com.kusa.musicplayer.albumart") {
+                    val songUriStr = uri.getQueryParameter("uri") ?: run {
+                        future.setException(RuntimeException("No URI param"))
+                        return@launch
+                    }
+                    Uri.parse(songUriStr)
+                } else {
+                    uri
+                }
+                val bitmap = AlbumArtLoader.load(this@MusicPlaybackService, targetUri)
+                if (bitmap != null) future.set(bitmap) else future.setException(RuntimeException("Artwork load failed"))
+            }
+            return future
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
-
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
@@ -53,20 +95,29 @@ class MusicPlaybackService : MediaLibraryService() {
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
+
         player.repeatMode = Player.REPEAT_MODE_ALL
+        player.addListener(shuffleStateListener)
 
         val pendingIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val sessionExtras = Bundle().apply {
+            putBoolean("com.google.android.gms.car.media.ALWAYS_RESERVE_SPACE_FOR_SHUFFLE_MODE", true)
+        }
+
         mediaLibrarySession = MediaLibrarySession.Builder(this, player, LibraryCallback())
             .setSessionActivity(pendingIntent)
+            .setExtras(sessionExtras)
+            .setBitmapLoader(customBitmapLoader)
             .build()
 
-        // キャッシュが存在すればサービス起動直後からブラウズ可能にする
-        getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_FOLDER, null)
+        mediaLibrarySession.setCustomLayout(ImmutableList.of(buildShuffleButton()))
+
+        getSharedPreferences("music_player_prefs", Context.MODE_PRIVATE)
+            .getString("last_folder_uri", null)
             ?.let { uriStr ->
                 repo.loadSongsFromCacheSync(Uri.parse(uriStr))?.let { cached ->
                     songs = cached
@@ -74,152 +125,118 @@ class MusicPlaybackService : MediaLibraryService() {
             }
     }
 
-    // ---- MediaLibrarySession.Callback ----
+    private fun buildShuffleButton(): CommandButton =
+        CommandButton.Builder(
+            if (player.shuffleModeEnabled) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF
+        )
+            .setSessionCommand(COMMAND_TOGGLE_SHUFFLE)
+            .setDisplayName("シャッフル")
+            .build()
 
     inner class LibraryCallback : MediaLibrarySession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                .add(Player.COMMAND_SET_SHUFFLE_MODE)
+                .add(Player.COMMAND_SET_REPEAT_MODE)
+                .build()
+            val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                .add(COMMAND_TOGGLE_SHUFFLE)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(sessionCommands)
+                .setAvailablePlayerCommands(playerCommands)
+                .build()
+        }
 
-        override fun onGetLibraryRoot(
-            session: MediaLibrarySession,
-            browser: MediaSession.ControllerInfo,
-            params: LibraryParams?
-        ): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(
-                LibraryResult.ofItem(buildBrowsableItem(ROOT_ID, "Music Player"), null)
-            )
-
-        override fun onGetChildren(
-            session: MediaLibrarySession,
-            browser: MediaSession.ControllerInfo,
-            parentId: String,
-            page: Int,
-            pageSize: Int,
-            params: LibraryParams?
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            val items: List<MediaItem> = when {
-                parentId == ROOT_ID -> listOf(
-                    buildBrowsableItem(SONGS_ID, "すべての曲"),
-                    buildBrowsableItem(ARTISTS_ID, "アーティスト"),
-                    buildBrowsableItem(ALBUMS_ID, "アルバム")
-                )
-                parentId == SONGS_ID ->
-                    songs.map { it.toMediaItem() }
-                parentId == ARTISTS_ID ->
-                    songs.map { it.displayArtist }.distinct().sorted()
-                        .map { a -> buildBrowsableItem("$ARTIST_PREFIX$a", a) }
-                parentId.startsWith(ARTIST_PREFIX) ->
-                    songs.filter { it.displayArtist == parentId.removePrefix(ARTIST_PREFIX) }
-                        .map { it.toMediaItem() }
-                parentId == ALBUMS_ID ->
-                    songs.map { it.displayAlbum }.distinct().sorted()
-                        .map { al -> buildBrowsableItem("$ALBUM_PREFIX$al", al) }
-                parentId.startsWith(ALBUM_PREFIX) ->
-                    songs.filter { it.displayAlbum == parentId.removePrefix(ALBUM_PREFIX) }
-                        .map { it.toMediaItem() }
-                else -> emptyList()
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            if (customCommand == COMMAND_TOGGLE_SHUFFLE) {
+                player.shuffleModeEnabled = !player.shuffleModeEnabled
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
-            return Futures.immediateFuture(
-                LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
-            )
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
 
-        override fun onGetItem(
-            session: MediaLibrarySession,
-            browser: MediaSession.ControllerInfo,
-            mediaId: String
-        ): ListenableFuture<LibraryResult<MediaItem>> {
-            val song = songs.find { it.id.toString() == mediaId }
-                ?: return Futures.immediateFuture(
-                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+        override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?) =
+            Futures.immediateFuture(LibraryResult.ofItem(buildBrowsableItem("root", "Music Player"), null))
+
+        override fun onGetChildren(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String, page: Int, pageSize: Int, params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            lastParentId = parentId
+            val items = when (parentId) {
+                "root" -> listOf(
+                    buildBrowsableItem("all_songs", "すべての曲"),
+                    buildBrowsableItem("artists", "アーティスト"),
+                    buildBrowsableItem("albums", "アルバム")
                 )
-            return Futures.immediateFuture(LibraryResult.ofItem(song.toMediaItem(), null))
-        }
-
-        // onSearch: 検索を受け付け件数を通知する（Android Auto / アシスタント向け）
-        override fun onSearch(
-            session: MediaLibrarySession,
-            browser: MediaSession.ControllerInfo,
-            query: String,
-            params: LibraryParams?
-        ): ListenableFuture<LibraryResult<Void>> {
-            val count = repo.searchSongs(songs, query, MusicRepository.SearchType.ANY).size
-            session.notifySearchResultChanged(browser, query, count, null)
-            return Futures.immediateFuture(LibraryResult.ofVoid())
-        }
-
-        // onGetSearchResult: 検索結果を返す
-        override fun onGetSearchResult(
-            session: MediaLibrarySession,
-            browser: MediaSession.ControllerInfo,
-            query: String,
-            page: Int,
-            pageSize: Int,
-            params: LibraryParams?
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            val results = repo.searchSongs(songs, query, MusicRepository.SearchType.ANY)
-                .map { it.toMediaItem() }
-            return Futures.immediateFuture(
-                LibraryResult.ofItemList(ImmutableList.copyOf(results), null)
-            )
-        }
-
-        // onAddMediaItems: ブラウズ / 音声操作で ID のみのアイテムが渡された場合に URI を解決する
-        override fun onAddMediaItems(
-            mediaSession: MediaSession,
-            controller: MediaSession.ControllerInfo,
-            mediaItems: MutableList<MediaItem>
-        ): ListenableFuture<MutableList<MediaItem>> {
-            val resolved = mediaItems.map { item ->
-                if (item.localConfiguration?.uri != null) item
-                else songs.find { it.id.toString() == item.mediaId }?.toMediaItem() ?: item
-            }.toMutableList()
-            return Futures.immediateFuture(resolved)
-        }
-
-        // onSetMediaItems: ViewModel がプレイリストを送ってきたタイミングでキャッシュを再読み込みする
-        override fun onSetMediaItems(
-            mediaSession: MediaSession,
-            controller: MediaSession.ControllerInfo,
-            mediaItems: MutableList<MediaItem>,
-            startIndex: Int,
-            startPositionMs: Long
-        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_FOLDER, null)
-                ?.let { uriStr ->
-                    repo.loadSongsFromCacheSync(Uri.parse(uriStr))?.let { songs = it }
+                "all_songs" -> songs.map { it.toMediaItem() }
+                "artists" -> {
+                    val c = Collator.getInstance(Locale.JAPANESE)
+                    songs.map { it.displayArtist }.distinct().sortedWith { a, b -> c.compare(a, b) }.map { buildBrowsableItem("artist/$it", it) }
                 }
-            return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
+                "albums" -> {
+                    val c = Collator.getInstance(Locale.JAPANESE)
+                    songs.map { it.displayAlbum }.distinct().sortedWith { a, b -> c.compare(a, b) }.map { buildBrowsableItem("album/$it", it) }
+                }
+                else -> {
+                    if (parentId.startsWith("artist/")) {
+                        val artist = parentId.removePrefix("artist/")
+                        songs.filter { it.displayArtist == artist }.map { it.toMediaItem() }
+                    } else if (parentId.startsWith("album/")) {
+                        val album = parentId.removePrefix("album/")
+                        songs.filter { it.displayAlbum == album }.map { it.toMediaItem() }
+                    } else emptyList()
+                }
+            }
+            return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items), null))
+        }
+
+        override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
+            // URIつきのアイテムはスマホUIから直接送られたもの。そのまま返す
+            if (mediaItems.isNotEmpty() && mediaItems.all { it.localConfiguration?.uri != null }) {
+                return Futures.immediateFuture(mediaItems)
+            }
+            // mediaIdのみのアイテム（Android Auto経由）はlastParentIdで解決する
+            val queue = when {
+                lastParentId == "all_songs" -> songs
+                lastParentId.startsWith("artist/") -> {
+                    val artist = lastParentId.removePrefix("artist/")
+                    songs.filter { it.displayArtist == artist }
+                }
+                lastParentId.startsWith("album/") -> {
+                    val album = lastParentId.removePrefix("album/")
+                    songs.filter { it.displayAlbum == album }
+                }
+                else -> songs
+            }
+            return Futures.immediateFuture(queue.map { it.toMediaItem() }.toMutableList())
         }
     }
 
-    // ---- MediaSessionService overrides ----
+    private fun buildBrowsableItem(id: String, title: String) = MediaItem.Builder()
+        .setMediaId(id)
+        .setMediaMetadata(MediaMetadata.Builder().setIsBrowsable(true).setIsPlayable(false).setTitle(title).build())
+        .build()
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession =
-        mediaLibrarySession
-
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaLibrarySession
     override fun onDestroy() {
+        player.removeListener(shuffleStateListener)
         mediaLibrarySession.release()
         player.release()
         super.onDestroy()
     }
-
-    // ---- Helpers ----
-
-    private fun buildBrowsableItem(id: String, title: String): MediaItem =
-        MediaItem.Builder()
-            .setMediaId(id)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setIsBrowsable(true)
-                    .setIsPlayable(false)
-                    .setTitle(title)
-                    .build()
-            )
-            .build()
 }
 
-private fun Song.toMediaItem(): MediaItem =
-    MediaItem.Builder()
+private fun Song.toMediaItem(): MediaItem {
+    val artUri = Uri.parse("content://com.kusa.musicplayer.albumart")
+        .buildUpon()
+        .appendQueryParameter("uri", uri.toString())
+        .build()
+
+    return MediaItem.Builder()
         .setUri(uri)
         .setMediaId(id.toString())
         .setMediaMetadata(
@@ -227,9 +244,11 @@ private fun Song.toMediaItem(): MediaItem =
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setArtworkUri(albumArtUri)
+                .setArtworkUri(artUri)
+                .setDisplayTitle(title)
+                .setSubtitle(artist)
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .build()
-        )
-        .build()
+        ).build()
+}
