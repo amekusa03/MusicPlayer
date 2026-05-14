@@ -51,6 +51,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val progress: LiveData<Long> = _progress
     private val _duration = MutableLiveData(0L)
     val duration: LiveData<Long> = _duration
+    private var lastDuration = -1L
     private val _isLoading = MutableLiveData(false)
     val isLoading: LiveData<Boolean> = _isLoading
     private val _error = MutableLiveData<String?>()
@@ -263,7 +264,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun updateProgress() {
         _progress.postValue(browser?.currentPosition ?: 0L)
-        _duration.postValue(browser?.duration?.takeIf { it > 0 } ?: 0L)
+        // 変化がない場合は不要な再描画を避ける
+        val dur = browser?.duration?.takeIf { it > 0 } ?: 0L
+        if (dur != lastDuration) {
+            lastDuration = dur
+            _duration.postValue(dur)
+        }
     }
 
     fun refreshProgress() {

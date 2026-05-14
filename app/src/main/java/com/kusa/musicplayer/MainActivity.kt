@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
     private val progressRunnable = object : Runnable {
         override fun run() {
             vm.refreshProgress()
-            handler.postDelayed(this, 500)
+            handler.postDelayed(this, 1000)
         }
     }
 

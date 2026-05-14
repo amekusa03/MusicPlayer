@@ -172,7 +172,7 @@ class MusicPlaybackService : MediaLibraryService() {
                     buildBrowsableItem("artists", "アーティスト"),
                     buildBrowsableItem("albums", "アルバム")
                 )
-                "all_songs" -> songs.map { it.toMediaItem() }
+                "all_songs" -> songs.map { it.toMediaItem("all_songs") }
                 "artists" -> {
                     val c = Collator.getInstance(Locale.JAPANESE)
                     songs.map { it.displayArtist }.distinct().sortedWith { a, b -> c.compare(a, b) }.map { buildBrowsableItem("artist/$it", it) }
@@ -184,10 +184,10 @@ class MusicPlaybackService : MediaLibraryService() {
                 else -> {
                     if (parentId.startsWith("artist/")) {
                         val artist = parentId.removePrefix("artist/")
-                        songs.filter { it.displayArtist == artist }.map { it.toMediaItem() }
+                        songs.filter { it.displayArtist == artist }.map { it.toMediaItem(parentId) }
                     } else if (parentId.startsWith("album/")) {
                         val album = parentId.removePrefix("album/")
-                        songs.filter { it.displayAlbum == album }.map { it.toMediaItem() }
+                        songs.filter { it.displayAlbum == album }.map { it.toMediaItem(parentId) }
                     } else emptyList()
                 }
             }
@@ -199,19 +199,38 @@ class MusicPlaybackService : MediaLibraryService() {
             if (mediaItems.isNotEmpty() && mediaItems.all { it.localConfiguration?.uri != null }) {
                 return Futures.immediateFuture(mediaItems)
             }
-            // mediaIdのみのアイテム（Android Auto経由）はlastParentIdで解決する
+            // mediaIdに埋め込まれたコンテキストからキューを解決する
+            // 例: "album/Rock Hits:42" → context="album/Rock Hits"
+            // 曲IDは数値なので最後の':'がコンテキストとIDの区切り
+            val firstMediaId = mediaItems.firstOrNull()?.mediaId ?: ""
+            val lastColon = firstMediaId.lastIndexOf(':')
+            val context = if (lastColon >= 0) firstMediaId.substring(0, lastColon) else lastParentId
+            // mediaIdのみのアイテム（Android Auto経由）はlastParentIdで解決する（fallback）
+//            val queue = when {
+//                lastParentId == "all_songs" -> songs
+//                lastParentId.startsWith("artist/") -> {
+//                    val artist = lastParentId.removePrefix("artist/")
+//                    songs.filter { it.displayArtist == artist }
+//                }
+//                lastParentId.startsWith("album/") -> {
+//                    val album = lastParentId.removePrefix("album/")
+//                    songs.filter { it.displayAlbum == album }
+//                }
+//                else -> songs
+//            }
             val queue = when {
-                lastParentId == "all_songs" -> songs
-                lastParentId.startsWith("artist/") -> {
-                    val artist = lastParentId.removePrefix("artist/")
+                context == "all_songs" -> songs
+                context.startsWith("artist/") -> {
+                    val artist = context.removePrefix("artist/")
                     songs.filter { it.displayArtist == artist }
                 }
-                lastParentId.startsWith("album/") -> {
-                    val album = lastParentId.removePrefix("album/")
+                context.startsWith("album/") -> {
+                    val album = context.removePrefix("album/")
                     songs.filter { it.displayAlbum == album }
                 }
                 else -> songs
             }
+            // 返却アイテムはplainなmediaId（コンテキストなし）でPlayerViewModelから参照できるようにする
             return Futures.immediateFuture(queue.map { it.toMediaItem() }.toMutableList())
         }
     }
@@ -230,15 +249,17 @@ class MusicPlaybackService : MediaLibraryService() {
     }
 }
 
-private fun Song.toMediaItem(): MediaItem {
+private fun Song.toMediaItem(contextId: String = ""): MediaItem {
     val artUri = Uri.parse("content://com.kusa.musicplayer.albumart")
         .buildUpon()
         .appendQueryParameter("uri", uri.toString())
         .build()
+    // コンテキストがある場合はmediaIdに埋め込む（例: "album/Rock Hits:42"）
+    val mediaId = if (contextId.isNotEmpty()) "$contextId:$id" else id.toString()
 
     return MediaItem.Builder()
         .setUri(uri)
-        .setMediaId(id.toString())
+        .setMediaId(mediaId)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
