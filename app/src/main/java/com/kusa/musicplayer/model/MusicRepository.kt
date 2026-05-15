@@ -36,6 +36,7 @@ class MusicRepository(private val context: Context) {
                     title     = o.getString("title"),
                     artist    = o.getString("artist"),
                     album     = o.getString("album"),
+                    genre     = o.optString("genre"),
                     uri       = Uri.parse(o.getString("uri")),
                     albumArtUri = o.optString("artUri").takeIf { it.isNotEmpty() }
                         ?.let { Uri.parse(it) },
@@ -56,6 +57,7 @@ class MusicRepository(private val context: Context) {
                 put("title",    s.title)
                 put("artist",   s.artist)
                 put("album",    s.album)
+                put("genre",    s.genre)
                 put("uri",      s.uri.toString())
                 put("artUri",   s.albumArtUri?.toString() ?: "")
                 put("duration", s.duration)
@@ -136,6 +138,7 @@ class MusicRepository(private val context: Context) {
                 ?: file.name?.removeSuffix(".mp3") ?: "不明な曲"
             val artist   = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
             val album    = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
+            val genre    = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
 
@@ -144,6 +147,7 @@ class MusicRepository(private val context: Context) {
                 title       = title,
                 artist      = artist,
                 album       = album,
+                genre       = genre,
                 uri         = file.uri,
                 albumArtUri = file.uri,
                 duration    = duration,

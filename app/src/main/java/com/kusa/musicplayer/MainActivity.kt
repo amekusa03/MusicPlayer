@@ -149,6 +149,7 @@ class MainActivity : AppCompatActivity() {
                 0 -> "全曲"
                 1 -> "アーティスト"
                 2 -> "アルバム"
+                3 -> "ジャンル"
                 else -> ""
             }
         }.attach()

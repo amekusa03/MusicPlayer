@@ -33,11 +33,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var currentQuery: String = ""
     private var currentArtistFilter: String? = null
     private var currentAlbumFilter: String? = null
+    private var currentGenreFilter: String? = null
 
     private val _artists = MutableLiveData<List<String>>(emptyList())
     val artists: LiveData<List<String>> = _artists
     private val _albums = MutableLiveData<List<String>>(emptyList())
     val albums: LiveData<List<String>> = _albums
+    private val _genres = MutableLiveData<List<String>>(emptyList())
+    val genres: LiveData<List<String>> = _genres
 
     private val _songs = MutableLiveData<List<Song>>(emptyList())
     val songs: LiveData<List<Song>> = _songs
@@ -101,6 +104,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 currentQuery = ""
                 currentArtistFilter = null
                 currentAlbumFilter = null
+                currentGenreFilter = null
                 _songs.postValue(sorted)
                 updateGroupLists(sorted)
                 if (loaded.isEmpty()) {
@@ -117,6 +121,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun updateGroupLists(songList: List<Song>) {
         _artists.postValue(songList.map { it.displayArtist }.distinct().sortedWith { a, b -> collator.compare(a, b) })
         _albums.postValue(songList.map { it.displayAlbum }.distinct().sortedWith { a, b -> collator.compare(a, b) })
+        _genres.postValue(songList.map { it.displayGenre }.distinct().sortedWith { a, b -> collator.compare(a, b) })
     }
 
     fun playSong(song: Song, list: List<Song>? = null) {
@@ -194,6 +199,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun filterByAlbum(albumName: String?) {
         currentAlbumFilter = albumName
         currentArtistFilter = null
+        currentGenreFilter = null
+        applyFilters()
+    }
+
+    fun filterByGenre(genreName: String?) {
+        currentGenreFilter = genreName
+        currentArtistFilter = null
+        currentAlbumFilter = null
         applyFilters()
     }
 
@@ -204,6 +217,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         if (currentAlbumFilter != null) {
             filtered = filtered.filter { it.displayAlbum == currentAlbumFilter }
+        }
+        if (currentGenreFilter != null) {
+            filtered = filtered.filter { it.displayGenre == currentGenreFilter }
         }
         if (currentQuery.isNotBlank()) {
             val q = currentQuery.trim().lowercase()
@@ -227,6 +243,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val albumSongs = allSongs.filter { it.displayAlbum == albumName }
         if (albumSongs.isNotEmpty()) {
             playSong(albumSongs[0], albumSongs)
+        }
+    }
+
+    fun playGenre(genreName: String) {
+        val genreSongs = allSongs.filter { it.displayGenre == genreName }
+        if (genreSongs.isNotEmpty()) {
+            playSong(genreSongs[0], genreSongs)
         }
     }
 
