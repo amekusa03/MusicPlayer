@@ -170,7 +170,8 @@ class MusicPlaybackService : MediaLibraryService() {
                 "root" -> listOf(
                     buildBrowsableItem("all_songs", "すべての曲"),
                     buildBrowsableItem("artists", "アーティスト"),
-                    buildBrowsableItem("albums", "アルバム")
+                    buildBrowsableItem("albums", "アルバム"),
+                    buildBrowsableItem("genres", "ジャンル")
                 )
                 "all_songs" -> songs.map { it.toMediaItem("all_songs") }
                 "artists" -> {
@@ -181,6 +182,10 @@ class MusicPlaybackService : MediaLibraryService() {
                     val c = Collator.getInstance(Locale.JAPANESE)
                     songs.map { it.displayAlbum }.distinct().sortedWith { a, b -> c.compare(a, b) }.map { buildBrowsableItem("album/$it", it) }
                 }
+                "genres" -> {
+                    val c = Collator.getInstance(Locale.JAPANESE)
+                    songs.map { it.displayGenre }.distinct().sortedWith { a, b -> c.compare(a, b) }.map { buildBrowsableItem("genre/$it", it) }
+                }
                 else -> {
                     if (parentId.startsWith("artist/")) {
                         val artist = parentId.removePrefix("artist/")
@@ -188,6 +193,9 @@ class MusicPlaybackService : MediaLibraryService() {
                     } else if (parentId.startsWith("album/")) {
                         val album = parentId.removePrefix("album/")
                         songs.filter { it.displayAlbum == album }.map { it.toMediaItem(parentId) }
+                    } else if (parentId.startsWith("genre/")) {
+                        val genre = parentId.removePrefix("genre/")
+                        songs.filter { it.displayGenre == genre }.map { it.toMediaItem(parentId) }
                     } else emptyList()
                 }
             }
@@ -227,6 +235,10 @@ class MusicPlaybackService : MediaLibraryService() {
                 context.startsWith("album/") -> {
                     val album = context.removePrefix("album/")
                     songs.filter { it.displayAlbum == album }
+                }
+                context.startsWith("genre/") -> {
+                    val genre = context.removePrefix("genre/")
+                    songs.filter { it.displayGenre == genre }
                 }
                 else -> songs
             }

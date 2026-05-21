@@ -9,7 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.view.View
-import android.widget.Button
+import com.google.android.material.button.MaterialButton
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.ProgressBar
@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvTotalTime: TextView
     private lateinit var viewPager: ViewPager2
     private lateinit var tabLayout: TabLayout
-    private lateinit var btnSelectFolder: Button
+    private lateinit var btnSelectFolder: MaterialButton
     private lateinit var pbLoading: ProgressBar
     private lateinit var tvEmpty: TextView
     private lateinit var searchView: androidx.appcompat.widget.SearchView
