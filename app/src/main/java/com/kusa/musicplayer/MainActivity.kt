@@ -28,6 +28,11 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.kusa.musicplayer.adapter.MainPagerAdapter
 import com.kusa.musicplayer.model.PlayMode
 import com.kusa.musicplayer.viewmodel.PlayerViewModel
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.audiofx.Visualizer
+import androidx.core.app.ActivityCompat
+import com.kusa.musicplayer.ui.SpectrumView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -36,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PREFS = "music_player_prefs"
         private const val KEY_FOLDER = "last_folder_uri"
+        private const val REQUEST_RECORD_AUDIO = 1001
     }
 
     private lateinit var vm: PlayerViewModel
@@ -57,8 +63,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pbLoading: ProgressBar
     private lateinit var tvEmpty: TextView
     private lateinit var searchView: androidx.appcompat.widget.SearchView
+    private lateinit var spectrumView: SpectrumView
 
     private var artworkJob: Job? = null
+    private var visualizer: Visualizer? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val progressRunnable = object : Runnable {
@@ -96,15 +104,48 @@ class MainActivity : AppCompatActivity() {
         savedFolder?.let { vm.loadFolder(Uri.parse(it)) }
 
         handleIntent(intent)
+
+        checkAudioPermission()
+    }
+
+    private fun checkAudioPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+        }
+    }
+
+    private fun initVisualizer(sessionId: Int) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
+        if (sessionId == 0) return // Skip if invalid session ID
+
+        try {
+            visualizer?.release()
+            visualizer = Visualizer(sessionId).apply {
+                captureSize = Visualizer.getCaptureSizeRange()[1]
+                setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(v: Visualizer?, waveform: ByteArray?, samplingRate: Int) {}
+                    override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
+                        fft?.let { spectrumView.updateMagnitudes(it) }
+                    }
+                }, Visualizer.getMaxCaptureRate() / 2, false, true)
+                enabled = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun onStart() {
         super.onStart()
         if (vm.isPlaying.value == true) handler.post(progressRunnable)
+        vm.audioSessionId.value?.let { initVisualizer(it) }
     }
 
     override fun onStop() {
         handler.removeCallbacks(progressRunnable)
+        visualizer?.enabled = false
+        visualizer?.release()
+        visualizer = null
         super.onStop()
     }
 
@@ -139,6 +180,7 @@ class MainActivity : AppCompatActivity() {
         pbLoading      = findViewById(R.id.pbLoading)
         tvEmpty        = findViewById(R.id.tvEmpty)
         searchView     = findViewById(R.id.searchView)
+        spectrumView   = findViewById(R.id.spectrumView)
     }
 
     private fun setupPager() {
@@ -184,6 +226,12 @@ class MainActivity : AppCompatActivity() {
             handler.removeCallbacks(progressRunnable)
             if (playing && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                 handler.post(progressRunnable)
+            }
+        }
+
+        vm.audioSessionId.observe(this) { id ->
+            if (id != null && id != 0) {
+                initVisualizer(id)
             }
         }
 

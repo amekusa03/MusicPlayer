@@ -115,6 +115,11 @@ class MusicPlaybackService : MediaLibraryService() {
             .build()
 
         mediaLibrarySession.setCustomLayout(ImmutableList.of(buildShuffleButton()))
+        
+        // Update session extras with audio session ID
+        val updatedExtras = sessionExtras.deepCopy()
+        updatedExtras.putInt("audio_session_id", player.audioSessionId)
+        mediaLibrarySession.setSessionExtras(updatedExtras)
 
         getSharedPreferences("music_player_prefs", Context.MODE_PRIVATE)
             .getString("last_folder_uri", null)

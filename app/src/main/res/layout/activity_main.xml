@@ -209,6 +209,13 @@
             android:layout_marginTop="8dp"
             android:visibility="gone" />
 
+        <com.kusa.musicplayer.ui.SpectrumView
+            android:id="@+id/spectrumView"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_marginTop="8dp"
+            android:background="#10FFFFFF" />
+
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

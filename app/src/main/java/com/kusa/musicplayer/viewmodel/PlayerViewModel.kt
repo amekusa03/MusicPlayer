@@ -14,6 +14,8 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import com.kusa.musicplayer.model.MusicRepository
 import com.kusa.musicplayer.model.PlayMode
 import com.kusa.musicplayer.model.Song
@@ -48,6 +50,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val currentSong: LiveData<Song?> = _currentSong
     private val _isPlaying = MutableLiveData(false)
     val isPlaying: LiveData<Boolean> = _isPlaying
+
+    private val _audioSessionId = MutableLiveData<Int?>(null)
+    val audioSessionId: LiveData<Int?> = _audioSessionId
     private val _playMode = MutableLiveData(PlayMode.SEQUENTIAL)
     val playMode: LiveData<PlayMode> = _playMode
     private val _progress = MutableLiveData(0L)
@@ -60,6 +65,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _error = MutableLiveData<String?>()
     val error: LiveData<String?> = _error
 
+    @OptIn(UnstableApi::class)
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _isPlaying.postValue(isPlaying)
@@ -69,6 +75,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         override fun onPlaybackStateChanged(playbackState: Int) {
             updateProgress()
+            _audioSessionId.postValue(browser?.sessionExtras?.getInt("audio_session_id"))
             if (playbackState == Player.STATE_ENDED) {
                 skipNext()
             }
@@ -78,6 +85,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    @OptIn(UnstableApi::class)
     fun connectToService() {
         val context = getApplication<Application>()
         val token = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
@@ -86,6 +94,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val controller = controllerFuture?.get() ?: return@addListener
             browser = controller
             controller.addListener(playerListener)
+            _audioSessionId.postValue(controller.sessionExtras.getInt("audio_session_id"))
             // 接続時の状態を反映
             _playMode.postValue(if (controller.shuffleModeEnabled) PlayMode.SHUFFLE else PlayMode.SEQUENTIAL)
             updateCurrentSong()
